@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const RouteDesignPro());
@@ -20,6 +23,10 @@ class RouteDesignPro extends StatelessWidget {
     );
   }
 }
+
+// =====================================================
+// ACCUEIL
+// =====================================================
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -48,7 +55,7 @@ class HomePage extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Bienvenue dans votre logiciel de conception routière.',
+              'Votre logiciel de conception et d’étude des routes.',
               style: TextStyle(fontSize: 16),
             ),
             const SizedBox(height: 24),
@@ -170,8 +177,84 @@ class HomePage extends StatelessWidget {
   }
 }
 
-class ProjectsPage extends StatelessWidget {
+// =====================================================
+// MES PROJETS
+// =====================================================
+
+class ProjectsPage extends StatefulWidget {
   const ProjectsPage({super.key});
+
+  @override
+  State<ProjectsPage> createState() => _ProjectsPageState();
+}
+
+class _ProjectsPageState extends State<ProjectsPage> {
+  List<Map<String, dynamic>> projects = [];
+  bool loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    loadProjects();
+  }
+
+  Future<void> loadProjects() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final savedProjects = prefs.getStringList('projects') ?? [];
+
+    final loadedProjects = savedProjects
+        .map((project) {
+          try {
+            return Map<String, dynamic>.from(
+              jsonDecode(project),
+            );
+          } catch (_) {
+            return <String, dynamic>{};
+          }
+        })
+        .where((project) => project.isNotEmpty)
+        .toList();
+
+    setState(() {
+      projects = loadedProjects;
+      loading = false;
+    });
+  }
+
+  Future<void> deleteProject(int index) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    projects.removeAt(index);
+
+    final savedProjects =
+        projects.map((project) => jsonEncode(project)).toList();
+
+    await prefs.setStringList('projects', savedProjects);
+
+    setState(() {});
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Projet supprimé.'),
+      ),
+    );
+  }
+
+  Future<void> openNewProject() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const NewProjectPage(),
+      ),
+    );
+
+    if (result == true) {
+      await loadProjects();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -179,49 +262,93 @@ class ProjectsPage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Mes projets'),
       ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.folder_open,
-                size: 80,
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Aucun projet routier',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: openNewProject,
+        icon: const Icon(Icons.add),
+        label: const Text('Nouveau projet'),
+      ),
+      body: loading
+          ? const Center(
+              child: CircularProgressIndicator(),
+            )
+          : projects.isEmpty
+              ? _emptyProjects()
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: projects.length,
+                  itemBuilder: (context, index) {
+                    final project = projects[index];
+
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: ListTile(
+                        leading: const CircleAvatar(
+                          child: Icon(Icons.route),
+                        ),
+                        title: Text(
+                          project['name'] ?? 'Projet sans nom',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '${project['location'] ?? 'Localisation inconnue'}'
+                          '\nLongueur : ${project['length'] ?? '-'} km',
+                        ),
+                        isThreeLine: true,
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete),
+                          onPressed: () {
+                            deleteProject(index);
+                          },
+                        ),
+                      ),
+                    );
+                  },
                 ),
+    );
+  }
+
+  Widget _emptyProjects() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.folder_open,
+              size: 80,
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Aucun projet routier',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
               ),
-              const SizedBox(height: 10),
-              const Text(
-                'Commencez par créer votre premier projet.',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 30),
-              FilledButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const NewProjectPage(),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.add),
-                label: const Text('Nouveau projet'),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Commencez par créer votre premier projet.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 30),
+            FilledButton.icon(
+              onPressed: openNewProject,
+              icon: const Icon(Icons.add),
+              label: const Text('Nouveau projet'),
+            ),
+          ],
         ),
       ),
     );
   }
 }
+
+// =====================================================
+// NOUVEAU PROJET
+// =====================================================
 
 class NewProjectPage extends StatefulWidget {
   const NewProjectPage({super.key});
@@ -233,20 +360,11 @@ class NewProjectPage extends StatefulWidget {
 class _NewProjectPageState extends State<NewProjectPage> {
   final _formKey = GlobalKey<FormState>();
 
-  final TextEditingController nameController =
-      TextEditingController();
-
-  final TextEditingController locationController =
-      TextEditingController();
-
-  final TextEditingController ownerController =
-      TextEditingController();
-
-  final TextEditingController lengthController =
-      TextEditingController();
-
-  final TextEditingController speedController =
-      TextEditingController();
+  final nameController = TextEditingController();
+  final locationController = TextEditingController();
+  final ownerController = TextEditingController();
+  final lengthController = TextEditingController();
+  final speedController = TextEditingController();
 
   @override
   void dispose() {
@@ -258,16 +376,40 @@ class _NewProjectPageState extends State<NewProjectPage> {
     super.dispose();
   }
 
-  void createProject() {
-    if (_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Projet créé avec succès !'),
-        ),
-      );
-
-      Navigator.pop(context);
+  Future<void> createProject() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
     }
+
+    final prefs = await SharedPreferences.getInstance();
+
+    final project = {
+      'name': nameController.text.trim(),
+      'location': locationController.text.trim(),
+      'owner': ownerController.text.trim(),
+      'length': lengthController.text.trim(),
+      'speed': speedController.text.trim(),
+      'createdAt': DateTime.now().toIso8601String(),
+    };
+
+    final savedProjects = prefs.getStringList('projects') ?? [];
+
+    savedProjects.add(jsonEncode(project));
+
+    await prefs.setStringList(
+      'projects',
+      savedProjects,
+    );
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Projet enregistré avec succès !'),
+      ),
+    );
+
+    Navigator.pop(context, true);
   }
 
   @override
@@ -302,7 +444,8 @@ class _NewProjectPageState extends State<NewProjectPage> {
                   prefixIcon: Icon(Icons.route),
                 ),
                 validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
+                  if (value == null ||
+                      value.trim().isEmpty) {
                     return 'Veuillez saisir le nom du projet';
                   }
                   return null;
@@ -365,7 +508,7 @@ class _NewProjectPageState extends State<NewProjectPage> {
                   onPressed: createProject,
                   icon: const Icon(Icons.save),
                   label: const Text(
-                    'Créer le projet',
+                    'Enregistrer le projet',
                     style: TextStyle(fontSize: 17),
                   ),
                 ),
